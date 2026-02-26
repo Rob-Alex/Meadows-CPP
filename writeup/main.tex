@@ -1,0 +1,61 @@
+\documentclass[lettersize,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{orcidlink}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\usepackage{cite}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks,
+    linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black}
+}
+% Subfigure and caption handling (use subfig for IEEEtran compatibility)
+
+%\usepackage[caption=false, font=scriptsize]{subfig}
+
+%\Captionsetup[subfloat]{font=rm, labelfont=rm}
+%\usepackage{biblatex} %Imports biblatex package
+%\addbibresource{references.bib} %Import the bibliography file
+\usepackage{subfiles}
+\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+% updated with editorial comments 8/9/2021
+
+\begin{document}
+\title{Meadows-CPP, a lightweight simulation software}
+
+\author{Robbie Alexander\orcidlink{0009-0006-1024-2160},~\IEEEmembership{Student Member,~IEEE},
+% <-this % stops a space
+\thanks{The authors are with the Department of Electronic and Electrical Engineering, University of Strathclyde, G1 1XQ Glasgow, U.K. (e-mail: robbie.alexander@strath.ac.uk).}% <-this % stops a space
+\thanks{Manuscript received X X, 202X; revised X X, 202X.}}
+
+% The paper heades
+\IEEEpubid{0000--0000/00\$00.00~\copyright~2025 IEEE}
+% Remember, if you use this you must call \IEEEpubidadjcol in the second
+% column for its text to clear the IEEEpubid mark.
+
+\include{content.tex}
+\vfill
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{images/robbie.jpeg}}]{Robbie Alexander}
+(Student Member, IEEE) received the M.Eng. degree in electronic and electrical engineering from the University of Strathclyde, Glasgow, U.K., in 2023, where he is currently pursuing the Ph.D. degree in electronic and electrical engineering. \par
+He is currently based within the High Voltage Technologies Research Group, University of Strathclyde. His research interests include high voltage systems, pulsed power system optimisation, non thermal plasma processes, and electrical breakdown in vacuum and electrical breakdown in gases under varying hydrodynamic conditions. \par
+Mr. Alexander is currently a member of the IEEE Nuclear and Plasma Sciences Society (NPSS). He is also a member of the IET. 
+\end{IEEEbiography}
+
+\vfill
+
+\end{document}
