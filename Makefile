@@ -1,6 +1,13 @@
 CXX      := clang++
 CXXFLAGS := -std=c++20 -Wall -Wextra -O3
-LDFLAGS  := -L/opt/homebrew/Cellar/llvm/21.1.7/lib/c++ -Wl,-rpath,/opt/homebrew/Cellar/llvm/21.1.7/lib/c++
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S), Darwin)
+  LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
+  LDFLAGS     := -L$(LLVM_PREFIX)/lib/c++ -Wl,-rpath,$(LLVM_PREFIX)/lib/c++
+else
+  LDFLAGS     :=
+endif
 
 ifdef DEBUG
   CXXFLAGS += -DDEBUG_BUILD -g -O0
@@ -14,7 +21,7 @@ TARGET       := $(BUILD_DIR)/meadows
 TEST_TARGET  := $(BUILD_DIR)/meadows-tests
 BENCH_TARGET := $(BUILD_DIR)/meadows-bench
 
-SUITES := grids allocators fields operators elliptic lookup_tables exporter
+SUITES := grids allocators fields operators elliptic lookup_tables exporter boundary_conditions
 
 all: $(TARGET)
 

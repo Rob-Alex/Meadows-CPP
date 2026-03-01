@@ -33,4 +33,21 @@ struct FieldAccessor {
     }
     return _data[offset];
   }
+ 
+  T& operator[](const std::array<int, Dims>& idx) {
+    size_t offset = 0;
+    for (int d = 0; d < Dims; ++d){
+      offset += idx[d] * _strides[d];
+    }
+    return _data[offset];
+  }
+  
+  const T& operator[](const std::array<int, Dims>& idx) const {
+    size_t offset = 0;
+    for (int d = 0; d < Dims; ++d){
+      offset += idx[d] * _strides[d];
+    }
+    return _data[offset];
+  }
+
 };

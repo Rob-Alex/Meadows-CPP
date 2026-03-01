@@ -2,20 +2,6 @@
   Memory Layer
   Important for managing 
   Robbie Alexander 
-
-│  Allocator<T>  : this is a policy based design for the class             │
-│    ├── HostAllocator<T>          64-byte aligned, std::aligned_alloc     │
-│    ├── DeviceAllocator<T>        cudaMalloc / hipMalloc                  │
-│    ├── PinnedAllocator<T>        cudaMallocHost (async transfers)        │
-│    └── UVMAllocator<T>           cudaMallocManaged (debug / prototyping) │
-│                                                                          │
-│  Design notes:                                                           │
-│    • Per-component allocation (stable pointers, independent transfers)   │
-│    • 64-byte alignment (AVX-512 / GPU cache-line ready)                  │
-│    • Kokkos::View<T*, MemoryUnmanaged> wraps raw T* for dispatch         │
-│    • Umpire-inspired ResourceManager pattern for multi-device tracking   │
-│    • Move-only semantics on all owning types
-
  */ 
 #pragma once
 #include <new>
@@ -66,7 +52,7 @@ namespace backend {
 
 // 
 
-// Allocator Concept (C++20)
+// Allocator concept 
 
 template<typename A>
 concept Allocator = requires {

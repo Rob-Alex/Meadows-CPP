@@ -10,6 +10,7 @@
 #include "test_elliptic.hpp"
 #include "test_lookup_tables.hpp"
 #include "test_exporter.hpp"
+#include "test_boundary_conditions.hpp"
 
 struct TestSuite {
   const char* name;
@@ -17,13 +18,14 @@ struct TestSuite {
 };
 
 static const TestSuite suites[] = {
-  {"grids",         run_grids_tests},
-  {"allocators",    run_allocators_tests},
-  {"fields",        run_fields_tests},
-  {"operators",     run_operators_tests},
-  {"elliptic",      run_elliptic_tests},
-  {"lookup_tables", run_lookup_tables_tests},
-  {"exporter",      run_exporter_tests},
+  {"grids",               run_grids_tests},
+  {"allocators",          run_allocators_tests},
+  {"fields",              run_fields_tests},
+  {"operators",           run_operators_tests},
+  {"elliptic",            run_elliptic_tests},
+  {"lookup_tables",       run_lookup_tables_tests},
+  {"exporter",            run_exporter_tests},
+  {"boundary_conditions", run_boundary_conditions_tests},
 };
 
 static constexpr int n_suites = sizeof(suites) / sizeof(suites[0]);

@@ -7,6 +7,7 @@
 */
 #pragma once 
 #include <array>
+#include <stdexcept>
 #include <vector>
 #include "memory.hpp"
 #include "fields.hpp"
@@ -321,9 +322,10 @@ struct Direction{
       }
       _dims[d] = n;
     }
+    _strides[Dims - 1] = 1;
     for(int d = Dims - 2; d >= 0; --d) {
       _strides[d] = _strides[d + 1] * _dims[d + 1];
-  }
+    }
     _total = 1;
     for (int d = 0; d < Dims; ++d) {
       _total *= _dims[d];
