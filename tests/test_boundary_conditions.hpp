@@ -19,13 +19,14 @@ TestResults run_boundary_conditions_tests() {
 
   constexpr double tol = 1e-12;
 
-  // 1D Dirichlet Tests:  
+  // 1D Dirichlet Tests:
 
   {
     GridGeometry<double, 1> geom({0.0}, {0.1}, {4}, 0, 2);
-    CellGrid<double, 1> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 1> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i) acc(i) = (i + 1) * 10.0;
 
@@ -47,13 +48,14 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(3), 40.0, tol, "1D Dirichlet interior[3] untouched");
   }
 
-  //1D Neumann zero-flux tests: 
+  //1D Neumann zero-flux tests:
 
   {
     GridGeometry<double, 1> geom({0.0}, {0.1}, {4}, 0, 2);
-    CellGrid<double, 1> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 1> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i) acc(i) = (i + 1) * 10.0;
 
@@ -69,14 +71,15 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(5),  40.0, tol, "1D Neumann zero-flux high ghost[ni+1]");
   }
 
-  // 1D Neumann non-zero flux Tests:  
+  // 1D Neumann non-zero flux Tests:
 
   {
     // flux=2.0, dx=0.1 → ghost[-(k+1)] = interior[0] + (k+1)*2.0*0.1
     GridGeometry<double, 1> geom({0.0}, {0.1}, {4}, 0, 2);
-    CellGrid<double, 1> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 1> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i) acc(i) = (i + 1) * 10.0;
 
@@ -91,15 +94,16 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(5),  40.0 + 2*2.0*0.1, tol, "1D Neumann nonzero high ghost[ni+1]");
   }
 
-  // 1D Periodic Tests:  
+  // 1D Periodic Tests:
 
   {
     // low:  ghost[-1]=interior[ni-1]=40, ghost[-2]=interior[ni-2]=30
     // high: ghost[ni]=interior[0]=10,    ghost[ni+1]=interior[1]=20
     GridGeometry<double, 1> geom({0.0}, {0.1}, {4}, 0, 2);
-    CellGrid<double, 1> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 1> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i) acc(i) = (i + 1) * 10.0;
 
@@ -114,14 +118,15 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(5),  20.0, tol, "1D Periodic high ghost[ni+1] == interior[1]");
   }
 
-  // 2D Dirichlet x-faces (dim=0) Tests 
+  // 2D Dirichlet x-faces (dim=0) Tests
   // this tests the transverse loop iterating over dim=1 (j axis).
 
   {
     GridGeometry<double, 2> geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 2);
-    CellGrid<double, 2> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i)
       for (int j = 0; j < 4; ++j)
@@ -151,13 +156,14 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(3, 3), 44.0, tol, "2D Dirichlet x interior(3,3) untouched");
   }
 
-  // 2D Dirichlet y-faces (dim=1) tests 
+  // 2D Dirichlet y-faces (dim=1) tests
 
   {
     GridGeometry<double, 2> geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 2);
-    CellGrid<double, 2> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i)
       for (int j = 0; j < 4; ++j)
@@ -185,13 +191,14 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(3, 4), 14.0 - 44.0, tol, "2D Dirichlet y-high ghost[3,4]");
   }
 
-  // 2D Neumann zero-flux x-faces 
+  // 2D Neumann zero-flux x-faces
 
   {
     GridGeometry<double, 2> geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 2);
-    CellGrid<double, 2> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i)
       for (int j = 0; j < 4; ++j)
@@ -210,13 +217,14 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(5,  3), acc(3, 3), tol, "2D Neumann x-high ghost[5,3] == interior[3,3]");
   }
 
-  // 2D Periodic x-faces 
+  // 2D Periodic x-faces
 
   {
     GridGeometry<double, 2> geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 2);
-    CellGrid<double, 2> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i)
       for (int j = 0; j < 4; ++j)
@@ -239,13 +247,14 @@ TestResults run_boundary_conditions_tests() {
     TEST_ASSERT_NEAR(acc(5, 1), acc(1, 1), tol, "2D Periodic x-high ghost[5,1] == interior[1,1]");
   }
 
-  // 2D Periodic y-faces 
+  // 2D Periodic y-faces
 
   {
     GridGeometry<double, 2> geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 2);
-    CellGrid<double, 2> grid(geom);
-    int phi = grid.register_component("phi");
-    auto acc = grid.accessor(phi);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    hier.build(geom, 1);
+    auto acc = hier.finest().accessor(phi);
 
     for (int i = 0; i < 4; ++i)
       for (int j = 0; j < 4; ++j)

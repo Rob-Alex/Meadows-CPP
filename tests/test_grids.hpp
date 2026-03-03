@@ -8,7 +8,7 @@ TestResults run_grids_tests() {
   TestResults results;
   std::printf("[grids]\n");
 
-  // GridGeometry 2D 
+  // GridGeometry 2D
 
   GridGeometry<double, 2> geom(
     {0.0, 0.0},
@@ -40,7 +40,7 @@ TestResults run_grids_tests() {
   TEST_ASSERT_EQ(nwg[0], 14, "2D n_with_ghosts[0] == 14");
   TEST_ASSERT_EQ(nwg[1], 24, "2D n_with_ghosts[1] == 24");
 
-  // GridGeometry 3D 
+  // GridGeometry 3D
 
   GridGeometry<double, 3> geom3d(
     {0.0, 0.0, 0.0},
@@ -57,160 +57,231 @@ TestResults run_grids_tests() {
   TEST_ASSERT_EQ(geom3d.total_cells(), 8448, "3D total_cells == 8448");
   TEST_ASSERT_EQ(geom3d.total_interior_cells(), 6000, "3D total_interior_cells == 6000");
 
-  // GridGeometry 1D 
+  // GridGeometry 1D
 
   GridGeometry<double, 1> geom1d({0.0}, {0.1}, {100}, 0, 2);
   TEST_ASSERT_EQ(geom1d.total_cells(), 104, "1D total_cells == 104");
   TEST_ASSERT_EQ(geom1d.total_interior_cells(), 100, "1D total_interior_cells == 100");
   TEST_ASSERT_NEAR(geom1d.get_domain_length(0), 10.0, 1e-12, "1D domain_length == 10.0");
 
-  // CellGrid construction and topology 
+  // Single-level GridHierarchy (replaces old CellGrid tests)
 
-  GridGeometry<double, 2> cg_geom({0.0, 0.0}, {0.1, 0.1}, {8, 8}, 0, 1);
-  CellGrid<double, 2> grid(cg_geom);
+  {
+    GridGeometry<double, 2> cg_geom({0.0, 0.0}, {0.1, 0.1}, {8, 8}, 0, 1);
+    GridHierarchy<double, 2> hier;
+    int phi_idx = hier.register_component("phi");
+    int rhs_idx = hier.register_component("rhs");
 
-  // dims include ghosts: 8+2 = 10 in each direction
-  TEST_ASSERT_EQ(grid.dims()[0], 10, "CellGrid dims[0] == 10");
-  TEST_ASSERT_EQ(grid.dims()[1], 10, "CellGrid dims[1] == 10");
+    TEST_ASSERT_EQ(phi_idx, 0, "First component index == 0");
+    TEST_ASSERT_EQ(rhs_idx, 1, "Second component index == 1");
+    TEST_ASSERT_EQ(hier.num_components(), 2, "2 components after registration");
 
-  // total = 10*10 = 100
-  TEST_ASSERT_EQ(grid.total_cells(), 100u, "CellGrid total_cells == 100");
+    // duplicate registration returns same index
+    int phi_dup = hier.register_component("phi");
+    TEST_ASSERT_EQ(phi_dup, 0, "Duplicate registration returns same index");
+    TEST_ASSERT_EQ(hier.num_components(), 2, "No extra component from duplicate");
 
-  // strides: row-major, stride[0]=10, stride[1]=1
-  TEST_ASSERT_EQ(grid.strides()[0], 10u, "CellGrid stride[0] == 10");
-  TEST_ASSERT_EQ(grid.strides()[1], 1u, "CellGrid stride[1] == 1");
+    // get_component_index
+    TEST_ASSERT_EQ(hier.get_component_index("phi"), 0, "get_component_index(phi) == 0");
+    TEST_ASSERT_EQ(hier.get_component_index("rhs"), 1, "get_component_index(rhs) == 1");
 
-  // no components initially
-  TEST_ASSERT_EQ(grid.num_components(), 0u, "CellGrid starts with 0 components");
+    hier.build(cg_geom, 1);
 
-  // Component registration 
+    auto& box = hier.finest_box();
 
-  int phi_idx = grid.register_component("phi");
-  TEST_ASSERT_EQ(phi_idx, 0, "First component index == 0");
-  TEST_ASSERT_EQ(grid.num_components(), 1u, "1 component after registration");
+    // dims include ghosts: 8+2 = 10 in each direction
+    TEST_ASSERT_EQ(box.dims()[0], 10, "Box dims[0] == 10");
+    TEST_ASSERT_EQ(box.dims()[1], 10, "Box dims[1] == 10");
 
-  int rhs_idx = grid.register_component("rhs");
-  TEST_ASSERT_EQ(rhs_idx, 1, "Second component index == 1");
-  TEST_ASSERT_EQ(grid.num_components(), 2u, "2 components after registration");
+    // total = 10*10 = 100
+    TEST_ASSERT_EQ(box.total_cells(), 100u, "Box total_cells == 100");
 
-  // duplicate registration returns same index
-  int phi_dup = grid.register_component("phi");
-  TEST_ASSERT_EQ(phi_dup, 0, "Duplicate registration returns same index");
-  TEST_ASSERT_EQ(grid.num_components(), 2u, "No extra component from duplicate");
+    // strides: row-major, stride[0]=10, stride[1]=1
+    TEST_ASSERT_EQ(box.strides()[0], 10u, "Box stride[0] == 10");
+    TEST_ASSERT_EQ(box.strides()[1], 1u, "Box stride[1] == 1");
 
-  // get_component_index
-  TEST_ASSERT_EQ(grid.get_component_index("phi"), 0, "get_component_index(phi) == 0");
-  TEST_ASSERT_EQ(grid.get_component_index("rhs"), 1, "get_component_index(rhs) == 1");
+    // num components
+    TEST_ASSERT_EQ(box.num_components(), 2, "Box has 2 components");
 
-  // Component data is zero-initialised 
+    // Component data is zero-initialised
+    const double* phi_data = box.component_data(phi_idx);
+    bool all_zero = true;
+    for (size_t i = 0; i < box.total_cells(); ++i) {
+      if (phi_data[i] != 0.0) { all_zero = false; break; }
+    }
+    TEST_ASSERT(all_zero, "Component data is zero-initialised");
 
-  const double* phi_data = grid.component_data(phi_idx);
-  bool all_zero = true;
-  for (size_t i = 0; i < grid.total_cells(); ++i) {
-    if (phi_data[i] != 0.0) { all_zero = false; break; }
+    // FieldAccessor read/write
+    auto phi_acc = hier.finest().accessor(phi_idx);
+
+    for (int j = 0; j < 8; ++j) {
+      for (int i = 0; i < 8; ++i) {
+        phi_acc(i, j) = (i + 1) * 10.0 + (j + 1);
+      }
+    }
+
+    TEST_ASSERT_NEAR(phi_acc(0, 0), 11.0, 1e-12, "accessor(0,0) == 11.0");
+    TEST_ASSERT_NEAR(phi_acc(7, 7), 88.0, 1e-12, "accessor(7,7) == 88.0");
+    TEST_ASSERT_NEAR(phi_acc(3, 5), 46.0, 1e-12, "accessor(3,5) == 46.0");
+
+    // Ghost cell access (negative indices)
+    phi_acc(-1, 0) = 99.0;
+    TEST_ASSERT_NEAR(phi_acc(-1, 0), 99.0, 1e-12, "Ghost access (-1,0) write/read");
+
+    phi_acc(0, -1) = 77.0;
+    TEST_ASSERT_NEAR(phi_acc(0, -1), 77.0, 1e-12, "Ghost access (0,-1) write/read");
+
+    // Cell volume
+    TEST_ASSERT_NEAR(box.cell_volume(), 0.01, 1e-12, "cell_volume == dx*dy = 0.01");
+
+    // Cell centre positions
+    auto cc00 = box.cell_centre(0, 0);
+    TEST_ASSERT_NEAR(cc00[0], 0.05, 1e-12, "cell_centre(0,0)[0] == 0.05");
+    TEST_ASSERT_NEAR(cc00[1], 0.05, 1e-12, "cell_centre(0,0)[1] == 0.05");
+
+    auto cc77 = box.cell_centre(7, 7);
+    TEST_ASSERT_NEAR(cc77[0], 0.75, 1e-12, "cell_centre(7,7)[0] == 0.75");
+    TEST_ASSERT_NEAR(cc77[1], 0.75, 1e-12, "cell_centre(7,7)[1] == 0.75");
+
+    // Component name lookup
+    TEST_ASSERT_EQ(hier.component_name(0), std::string("phi"), "component_name(0) == phi");
+    TEST_ASSERT_EQ(hier.component_name(1), std::string("rhs"), "component_name(1) == rhs");
   }
-  TEST_ASSERT(all_zero, "Component data is zero-initialised");
 
-  // FieldAccessor read/write 
+  // Multi-level hierarchy (4 levels, verify geometry at each level)
 
-  auto phi_acc = grid.accessor(phi_idx);
+  {
+    GridGeometry<double, 2> finest_geom({0.0, 0.0}, {0.01, 0.01}, {64, 64}, 3, 1);
+    GridHierarchy<double, 2> hier;
+    int phi = hier.register_component("phi");
+    [[maybe_unused]] int rhs = hier.register_component("rhs");
+    [[maybe_unused]] int res = hier.register_component("residual");
+    hier.build(finest_geom, 4);
 
-  // write to interior cells
-  for (int j = 0; j < 8; ++j) {
-    for (int i = 0; i < 8; ++i) {
-      phi_acc(i, j) = (i + 1) * 10.0 + (j + 1);
+    TEST_ASSERT_EQ(hier.num_levels(), 4, "4 levels in hierarchy");
+    TEST_ASSERT_EQ(hier.finest_level(), 3, "finest_level == 3");
+    TEST_ASSERT_EQ(hier.ref_ratio(), 2, "ref_ratio == 2");
+
+    // Level 0 (coarsest): 8x8, spacing 0.08
+    auto& lvl0_geom = hier.level(0).geometry();
+    TEST_ASSERT_EQ(lvl0_geom._n_interior[0], 8, "Level 0 n_interior[0] == 8");
+    TEST_ASSERT_EQ(lvl0_geom._n_interior[1], 8, "Level 0 n_interior[1] == 8");
+    TEST_ASSERT_NEAR(lvl0_geom._spacing[0], 0.08, 1e-12, "Level 0 spacing[0] == 0.08");
+    TEST_ASSERT_NEAR(lvl0_geom._spacing[1], 0.08, 1e-12, "Level 0 spacing[1] == 0.08");
+    TEST_ASSERT_EQ(lvl0_geom._level, 0, "Level 0 _level == 0");
+
+    // Level 1: 16x16, spacing 0.04
+    auto& lvl1_geom = hier.level(1).geometry();
+    TEST_ASSERT_EQ(lvl1_geom._n_interior[0], 16, "Level 1 n_interior[0] == 16");
+    TEST_ASSERT_NEAR(lvl1_geom._spacing[0], 0.04, 1e-12, "Level 1 spacing[0] == 0.04");
+
+    // Level 2: 32x32, spacing 0.02
+    auto& lvl2_geom = hier.level(2).geometry();
+    TEST_ASSERT_EQ(lvl2_geom._n_interior[0], 32, "Level 2 n_interior[0] == 32");
+    TEST_ASSERT_NEAR(lvl2_geom._spacing[0], 0.02, 1e-12, "Level 2 spacing[0] == 0.02");
+
+    // Level 3 (finest): 64x64, spacing 0.01
+    auto& lvl3_geom = hier.level(3).geometry();
+    TEST_ASSERT_EQ(lvl3_geom._n_interior[0], 64, "Level 3 n_interior[0] == 64");
+    TEST_ASSERT_NEAR(lvl3_geom._spacing[0], 0.01, 1e-12, "Level 3 spacing[0] == 0.01");
+
+    // All levels have same number of components
+    for (int lvl = 0; lvl < 4; ++lvl) {
+      TEST_ASSERT_EQ(hier.level(lvl).box(0).num_components(), 3,
+        "All levels have 3 components");
+    }
+
+    // Component indices are consistent across levels
+    auto phi_fine = hier.finest().accessor(phi);
+    phi_fine(0, 0) = 42.0;
+    TEST_ASSERT_NEAR(phi_fine(0, 0), 42.0, 1e-12, "Finest level accessor works");
+
+    auto phi_coarse = hier.level(0).accessor(phi);
+    phi_coarse(0, 0) = 99.0;
+    TEST_ASSERT_NEAR(phi_coarse(0, 0), 99.0, 1e-12, "Coarsest level accessor works");
+
+    // Domain extents are the same at all levels
+    for (int lvl = 0; lvl < 4; ++lvl) {
+      auto ext = hier.level(lvl).geometry().get_domain_extents();
+      TEST_ASSERT_NEAR(ext[0], 0.64, 1e-12, "Domain extent[0] consistent across levels");
+      TEST_ASSERT_NEAR(ext[1], 0.64, 1e-12, "Domain extent[1] consistent across levels");
     }
   }
 
-  // read back
-  TEST_ASSERT_NEAR(phi_acc(0, 0), 11.0, 1e-12, "accessor(0,0) == 11.0");
-  TEST_ASSERT_NEAR(phi_acc(7, 7), 88.0, 1e-12, "accessor(7,7) == 88.0");
-  TEST_ASSERT_NEAR(phi_acc(3, 5), 46.0, 1e-12, "accessor(3,5) == 46.0");
+  // Error: registration after build throws
 
-  // accessor by name
-  auto phi_acc2 = grid.accessor("phi");
-  TEST_ASSERT_NEAR(phi_acc2(0, 0), 11.0, 1e-12, "accessor by name matches");
+  {
+    GridGeometry<double, 2> g({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 1);
+    GridHierarchy<double, 2> hier;
+    hier.register_component("phi");
+    hier.build(g, 1);
 
-  // Ghost cell access (negative indices) 
-
-  // write to ghost cell at (-1, 0)
-  phi_acc(-1, 0) = 99.0;
-  TEST_ASSERT_NEAR(phi_acc(-1, 0), 99.0, 1e-12, "Ghost access (-1,0) write/read");
-
-  // ghost cell at (0, -1)
-  phi_acc(0, -1) = 77.0;
-  TEST_ASSERT_NEAR(phi_acc(0, -1), 77.0, 1e-12, "Ghost access (0,-1) write/read");
-
-  // Cell volume 
-
-  TEST_ASSERT_NEAR(grid.cell_volume(), 0.01, 1e-12, "cell_volume == dx*dy = 0.01");
-
-  // Cell centre positions 
-
-  // cell (0,0) centre should be at origin + 0.5*spacing
-  auto cc00 = grid.cell_centre(0, 0);
-  TEST_ASSERT_NEAR(cc00[0], 0.05, 1e-12, "cell_centre(0,0)[0] == 0.05");
-  TEST_ASSERT_NEAR(cc00[1], 0.05, 1e-12, "cell_centre(0,0)[1] == 0.05");
-
-  // cell (7,7) centre
-  auto cc77 = grid.cell_centre(7, 7);
-  TEST_ASSERT_NEAR(cc77[0], 0.75, 1e-12, "cell_centre(7,7)[0] == 0.75");
-  TEST_ASSERT_NEAR(cc77[1], 0.75, 1e-12, "cell_centre(7,7)[1] == 0.75");
-
-  // refinement tests
-
-  auto refine = grid.refine(2);
-  TEST_ASSERT_EQ(refine._geom._n_interior[0], 16, "Refined n_interior[0] == 16");
-  TEST_ASSERT_EQ(refine._geom._n_interior[1], 16, "Refined n_interior[1] == 16");
-  TEST_ASSERT_NEAR(refine._geom._spacing[0], 0.05, 1e-12, "Refined n_interior[0] == 0.05"); 
-  TEST_ASSERT_NEAR(refine._geom._spacing[1], 0.05, 1e-12, "Refined n_interior[1] == 0.05");
-  TEST_ASSERT_EQ(refine._geom._level, 1, "Refined level == 1");
-  TEST_ASSERT_EQ(refine._geom._nghosts, 1, "Refined nghosts preserved");
-
-  // coarsen grid tests, this should only go to level 0 or throw a runtime error
-
-  auto coarse = refine.coarsen(2);
-  TEST_ASSERT_EQ(coarse._geom._n_interior[0], 8, "Coarsened n_interior[0] == 4");
-  TEST_ASSERT_EQ(coarse._geom._n_interior[1], 8, "Coarsened n_interior[1] == 4");
-  TEST_ASSERT_NEAR(coarse._geom._spacing[0], 0.1, 1e-12, "Coarsened spacing[0] == 0.2");
-  TEST_ASSERT_NEAR(coarse._geom._spacing[1], 0.1, 1e-12, "Coarsened spacing[1] == 0.2");
-  TEST_ASSERT_EQ(coarse._geom._level, 0, "Coarsened level == 0");
-  TEST_ASSERT_EQ(coarse._geom._nghosts, 1, "Coarsened nghosts preserved");
-
-  // coarsened grid should have correct dims: (8+2)*(8+2) = 100
-  TEST_ASSERT_EQ(coarse.total_cells(), 100u, "Coarsened total_cells == 100");
-  
-  // Test that coarsening past level 0 throws a runtime error
-  bool caught_exception = false;
-  try {
-    auto coarse_past_0 = coarse.coarsen(2);
-  } catch (const std::runtime_error& e) {
-    caught_exception = true;
+    bool caught = false;
+    try {
+      hier.register_component("new_comp");
+    } catch (const std::runtime_error&) {
+      caught = true;
+    }
+    TEST_ASSERT(caught, "Registration after build throws runtime_error");
   }
-  TEST_ASSERT(caught_exception, "Coarsening past level 0 throws runtime_error");
 
-  // Move semantics 
+  // Error: access before build throws
 
-  GridGeometry<double, 2> mv_geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 1);
-  CellGrid<double, 2> grid_a(mv_geom);
-  grid_a.register_component("test");
-  auto test_acc = grid_a.accessor(0);
-  test_acc(0, 0) = 42.0;
+  {
+    GridHierarchy<double, 2> hier;
+    hier.register_component("phi");
 
-  // move construct
-  CellGrid<double, 2> grid_b(std::move(grid_a));
-  TEST_ASSERT_EQ(grid_b.num_components(), 1u, "Move ctor preserves components");
-  auto test_acc_b = grid_b.accessor(0);
-  TEST_ASSERT_NEAR(test_acc_b(0, 0), 42.0, 1e-12, "Move ctor preserves data");
+    bool caught = false;
+    try {
+      hier.level(0);
+    } catch (const std::runtime_error&) {
+      caught = true;
+    }
+    TEST_ASSERT(caught, "Access before build throws runtime_error");
+  }
 
-  // move assign
-  CellGrid<double, 2> grid_c(mv_geom);
-  grid_c = std::move(grid_b);
-  TEST_ASSERT_EQ(grid_c.num_components(), 1u, "Move assign preserves components");
-  auto test_acc_c = grid_c.accessor(0);
-  TEST_ASSERT_NEAR(test_acc_c(0, 0), 42.0, 1e-12, "Move assign preserves data");
+  // Error: non-divisible grid throws
 
-  // FaceGrid holds geometry 
+  {
+    GridGeometry<double, 2> g({0.0, 0.0}, {0.1, 0.1}, {5, 5}, 0, 1);
+    GridHierarchy<double, 2> hier;
+    hier.register_component("phi");
+
+    bool caught = false;
+    try {
+      hier.build(g, 3);  // 5 not divisible by 2^2=4
+    } catch (const std::runtime_error&) {
+      caught = true;
+    }
+    TEST_ASSERT(caught, "Non-divisible grid throws runtime_error");
+  }
+
+  // Move semantics on hierarchy
+
+  {
+    GridGeometry<double, 2> mv_geom({0.0, 0.0}, {0.1, 0.1}, {4, 4}, 0, 1);
+    GridHierarchy<double, 2> hier_a;
+    hier_a.register_component("test");
+    hier_a.build(mv_geom, 1);
+    auto test_acc = hier_a.finest().accessor(0);
+    test_acc(0, 0) = 42.0;
+
+    // move construct
+    GridHierarchy<double, 2> hier_b(std::move(hier_a));
+    TEST_ASSERT_EQ(hier_b.num_levels(), 1, "Move ctor preserves levels");
+    TEST_ASSERT_EQ(hier_b.num_components(), 1, "Move ctor preserves components");
+    auto test_acc_b = hier_b.finest().accessor(0);
+    TEST_ASSERT_NEAR(test_acc_b(0, 0), 42.0, 1e-12, "Move ctor preserves data");
+
+    // move assign
+    GridHierarchy<double, 2> hier_c;
+    hier_c = std::move(hier_b);
+    TEST_ASSERT_EQ(hier_c.num_levels(), 1, "Move assign preserves levels");
+    auto test_acc_c = hier_c.finest().accessor(0);
+    TEST_ASSERT_NEAR(test_acc_c(0, 0), 42.0, 1e-12, "Move assign preserves data");
+  }
+
+  // FaceGrid holds geometry
 
   FaceGrid<double, 2> face_grid{geom};
   TEST_ASSERT_EQ(face_grid._geom.total_cells(), 336, "FaceGrid holds geometry");

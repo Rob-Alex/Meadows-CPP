@@ -12,7 +12,7 @@
 #include <variant>
 #include "grid.hpp"
 
-// Compile-time transverse loop for assignement of the ghost cells and what not 
+// compile-time transverse loop for assignement of the ghost cells and what not 
 // recursively generates a nested loop over every dimension except FaceDim.
 // At D == FaceDim the dimension is skipped (no loop body).
 // At D == Dims the base case launches the kernel with the completed index array.

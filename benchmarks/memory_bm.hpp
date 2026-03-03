@@ -126,10 +126,10 @@ void sequential_sweep(size_t count, int sweeps) {
   }
 }
 
-// BM 4: CellGrid component access via FieldAccessor
+// BM 4: GridHierarchy component access via FieldAccessor
 // Simulates a 2D stencil-style sweep over registered components
 void cellgrid_access(int nx, int ny, int sweeps) {
-  std::printf("\n--- CellGrid component access (%dx%d, sweeps=%d) ---\n", nx, ny, sweeps);
+  std::printf("\n--- GridHierarchy component access (%dx%d, sweeps=%d) ---\n", nx, ny, sweeps);
 
   GridGeometry<double, 2> geom(
     {0.0, 0.0},
@@ -139,12 +139,13 @@ void cellgrid_access(int nx, int ny, int sweeps) {
   );
 
   using Alloc = HostAllocator<double, no_tracking>;
-  CellGrid<double, 2, Alloc> grid(geom);
-  int phi = grid.register_component("phi");
-  int rhs = grid.register_component("rhs");
+  GridHierarchy<double, 2, Alloc> hier;
+  int phi = hier.register_component("phi");
+  int rhs = hier.register_component("rhs");
+  hier.build(geom, 1);
 
   // initialise rhs to 1.0
-  auto rhs_acc = grid.accessor(rhs);
+  auto rhs_acc = hier.finest().accessor(rhs);
   for (int j = 0; j < ny; ++j) {
     for (int i = 0; i < nx; ++i) {
       rhs_acc(i, j) = 1.0;
@@ -155,8 +156,8 @@ void cellgrid_access(int nx, int ny, int sweeps) {
   {
     Timer t;
     for (int s = 0; s < sweeps; ++s) {
-      auto phi_acc = grid.accessor(phi);
-      auto rhs_acc_inner = grid.accessor(rhs);
+      auto phi_acc = hier.finest().accessor(phi);
+      auto rhs_acc_inner = hier.finest().accessor(rhs);
       for (int j = 0; j < ny; ++j) {
         for (int i = 0; i < nx; ++i) {
           phi_acc(i, j) += 0.25 * rhs_acc_inner(i, j);
@@ -169,12 +170,13 @@ void cellgrid_access(int nx, int ny, int sweeps) {
 
   // same sweep with raw pointer arithmetic (baseline)
   {
-    double* phi_raw = grid.component_data(phi);
-    double* rhs_raw = grid.component_data(rhs);
-    auto strides = grid.strides();
+    auto& box = hier.finest_box();
+    double* phi_raw = box.component_data(phi);
+    double* rhs_raw = box.component_data(rhs);
+    auto strides = box.strides();
 
     // reset phi
-    std::memset(phi_raw, 0, grid.total_cells() * sizeof(double));
+    std::memset(phi_raw, 0, box.total_cells() * sizeof(double));
 
     Timer t;
     for (int s = 0; s < sweeps; ++s) {
