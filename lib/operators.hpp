@@ -5,6 +5,7 @@
 */
 #pragma once
 #include "grid.hpp"
+#include "parallel_loop.hpp"
 #include <cmath>
 
 // InteriorLoop: compile-time nested loop over all Dims dimensions.
@@ -62,8 +63,7 @@ struct laplacian {
       inv_dx2[d] = T{1} / (geom._spacing[d] * geom._spacing[d]);
     }
 
-    std::array<int, Dims> idx{};
-    InteriorLoop<Dims, 0>::run(geom._n_interior, idx,
+    parallel_for_interior<T, Dims>(geom,
       [&](const std::array<int, Dims>& cell) {
         T lap = T{0};
         for (int d = 0; d < Dims; ++d) {
@@ -80,11 +80,9 @@ template<typename T, int Dims, typename Alloc = HostAllocator<T, default_trackin
 struct l2_norm {
   static T compute(FieldAccessor<T, Dims>& phi,
                    const GridGeometry<T, Dims>& geom) {
-    T sum = T{0};
-    std::array<int, Dims> idx{};
-    InteriorLoop<Dims, 0>::run(geom._n_interior, idx,
-      [&](const std::array<int, Dims>& cell) {
-        sum += phi[cell] * phi[cell];
+    T sum = parallel_reduce_interior<T, Dims>(geom, T{0},
+      [&](const std::array<int, Dims>& cell) -> T {
+        return phi[cell] * phi[cell];
       });
     return std::sqrt(sum / static_cast<T>(geom.total_interior_cells()));
   }
@@ -105,18 +103,97 @@ struct residual {
       inv_dx2[d] = T{1} / (geom._spacing[d] * geom._spacing[d]);
     }
 
-    T sum = T{0};
-    std::array<int, Dims> idx{};
-    InteriorLoop<Dims, 0>::run(geom._n_interior, idx,
-      [&](const std::array<int, Dims>& cell) {
+    T sum = parallel_reduce_interior<T, Dims>(geom, T{0},
+      [&](const std::array<int, Dims>& cell) -> T {
         T lap = T{0};
         for (int d = 0; d < Dims; ++d) {
           FluxPolicy::accumulate(phi, cell, d, inv_dx2[d], lap);
         }
         res[cell] = rhs[cell] - lap;
-        sum += res[cell] * res[cell];
+        return res[cell] * res[cell];
       });
 
     return std::sqrt(sum / static_cast<T>(geom.total_interior_cells()));
+  }
+};
+
+// SmootherBase: CRTP base for smoothers.
+// Derived must implement:
+//   smooth_impl(phi, rhs, geom, n_sweeps, fill_bc_fn)
+// fill_bc_fn is a callable: void(FieldAccessor<T, Dims>&)
+// so the smoother can fill BCs between colour sweeps without
+// coupling to BCRegistry.
+
+template<class Derived, typename T, int Dims>
+struct SmootherBase {
+  template<typename FillBCFn>
+  void smooth(FieldAccessor<T, Dims>& phi,
+              FieldAccessor<T, Dims>& rhs,
+              const GridGeometry<T, Dims>& geom,
+              int n_sweeps,
+              FillBCFn&& fill_bc_fn) {
+    static_cast<Derived*>(this)->smooth_impl(
+      phi, rhs, geom, n_sweeps, std::forward<FillBCFn>(fill_bc_fn));
+  }
+};
+
+// RBGS: Red-Black Gauss-Seidel smoother for the Laplacian.
+//
+// Cell colouring: (i + j + ...) % 2
+//   red = 0, black = 1
+//
+// Each sweep:
+//   1. Update all red cells   (neighbours are all black → no conflicts)
+//   2. Fill BCs               (ghost values may have changed)
+//   3. Update all black cells (neighbours are all red → no conflicts)
+//
+// Update formula (derived from solving L(phi)=rhs locally for phi[cell]):
+//   off_diagonal = sum_d (phi[i+1,d] + phi[i-1,d]) * inv_dx2[d]
+//   diagonal     = sum_d (-2 * inv_dx2[d])
+//   phi[cell]    = (rhs[cell] - off_diagonal) / diagonal
+//
+// In-place — no scratch buffer. Each colour's neighbours are the
+// other colour, so reads are always from the "old" values.
+// GPU: each colour sweep is embarrassingly parallel → parallel_for.
+
+template<typename T, int Dims>
+struct RBGS : SmootherBase<RBGS<T, Dims>, T, Dims> {
+
+  template<typename FillBCFn>
+  void smooth_impl(FieldAccessor<T, Dims>& phi,
+                   FieldAccessor<T, Dims>& rhs,
+                   const GridGeometry<T, Dims>& geom,
+                   int n_sweeps,
+                   FillBCFn&& fill_bc_fn) {
+
+    // precompute 1/dx^2 per dimension and the diagonal coefficient
+    std::array<T, Dims> inv_dx2;
+    T diag = T{0};
+    for (int d = 0; d < Dims; ++d) {
+      inv_dx2[d] = T{1} / (geom._spacing[d] * geom._spacing[d]);
+      diag += T{-2} * inv_dx2[d];
+    }
+
+    for (int sweep = 0; sweep < n_sweeps; ++sweep) {
+      // two passes per sweep: colour 0 (red) then colour 1 (black)
+      for (int colour = 0; colour < 2; ++colour) {
+        parallel_for_interior_colour<T, Dims>(geom, colour,
+          [&](const std::array<int, Dims>& cell) {
+            // accumulate off-diagonal: sum of neighbour contributions
+            T off_diag = T{0};
+            for (int d = 0; d < Dims; ++d) {
+              auto idx_p = cell;  idx_p[d] += 1;
+              auto idx_m = cell;  idx_m[d] -= 1;
+              off_diag += (phi[idx_p] + phi[idx_m]) * inv_dx2[d];
+            }
+
+            phi[cell] = (rhs[cell] - off_diag) / diag;
+          });
+
+        // fill BCs after each colour pass so the next colour
+        // sees correct ghost values
+        fill_bc_fn(phi);
+      }
+    }
   }
 };

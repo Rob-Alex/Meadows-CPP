@@ -12,7 +12,20 @@ endif
 ifdef DEBUG
   CXXFLAGS += -DDEBUG_BUILD -g -O0
 endif
+
+# OpenMP (opt-in via OMP=1, e.g. `make all OMP=1`)
+ifdef OMP
+  OMP_LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
+  CXX      := $(OMP_LLVM_PREFIX)/bin/clang++
+  CXXFLAGS += -fopenmp
+  LDFLAGS  += -L$(OMP_LLVM_PREFIX)/lib -lomp
+endif
 INCLUDES := -Ilib -Itests -Ibenchmarks
+
+# HDF5 (for exporter, used by main target only)
+HDF5_PREFIX  := $(shell brew --prefix hdf5 2>/dev/null)
+HDF5_CFLAGS  := -I$(HDF5_PREFIX)/include
+HDF5_LDFLAGS := -L$(HDF5_PREFIX)/lib -lhdf5_cpp -lhdf5
 
 SRC_DIR   := src
 BUILD_DIR := build
@@ -36,9 +49,14 @@ test-build: $(TEST_TARGET)
 $(addprefix test-,$(SUITES)): test-%: $(TEST_TARGET)
 	./$(TEST_TARGET) $*
 
-$(TARGET): $(BUILD_DIR)/main.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+# main binary (links HDF5)
+$(BUILD_DIR)/main.o: $(SRC_DIR)/main.cpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(HDF5_CFLAGS) -c $< -o $@
 
+$(TARGET): $(BUILD_DIR)/main.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(HDF5_LDFLAGS) $^ -o $@
+
+# tests (no HDF5 dependency)
 $(TEST_TARGET): $(BUILD_DIR)/tests.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
@@ -59,4 +77,7 @@ bench: $(BENCH_TARGET)
 
 bench-build: $(BENCH_TARGET)
 
-.PHONY: all test test-build bench bench-build clean $(addprefix test-,$(SUITES))
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all test test-build bench bench-build clean run $(addprefix test-,$(SUITES))

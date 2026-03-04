@@ -218,4 +218,30 @@ struct BCRegistry {
       }
     }
   }
+
+  // Create a homogeneous version of this BC registry.
+  // For multigrid correction levels, the error at boundaries is zero,
+  // so we need: Dirichlet value→0, Neumann flux→0, Periodic→unchanged.
+  BCRegistry<T, Dims> make_homogeneous() const {
+    BCRegistry<T, Dims> result;
+    for (int dim = 0; dim < Dims; ++dim) {
+      for (int side = 0; side < 2; ++side) {
+        std::visit([&](const auto& bc) {
+          using BCType = std::decay_t<decltype(bc)>;
+          if constexpr (std::is_same_v<BCType, DirichletBC<T, Dims>>) {
+            DirichletBC<T, Dims> h;
+            h.value = T{0};
+            result.set(dim, side, h);
+          } else if constexpr (std::is_same_v<BCType, NeumannBC<T, Dims>>) {
+            NeumannBC<T, Dims> h;
+            h.flux = T{0};
+            result.set(dim, side, h);
+          } else if constexpr (std::is_same_v<BCType, PeriodicBC<T, Dims>>) {
+            result.set(dim, side, bc);
+          }
+        }, faces[2 * dim + side]);
+      }
+    }
+    return result;
+  }
 };

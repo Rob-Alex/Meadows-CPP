@@ -349,13 +349,20 @@ public:
 
       std::array<int, Dims> n_interior;
       std::array<T, Dims> spacing;
+      std::array<T, Dims> origin;
       for (int d = 0; d < Dims; ++d) {
         n_interior[d] = finest_geom._n_interior[d] / ratio;
         spacing[d] = finest_geom._spacing[d] * ratio;
+        // origin = position of first cell centre on this level
+        // domain lower boundary: x_lo = finest_origin - dx_fine/2
+        // coarse first cell centre: x_lo + dx_coarse/2
+        origin[d] = finest_geom._origin[d]
+                  - finest_geom._spacing[d] / T{2}
+                  + spacing[d] / T{2};
       }
 
       GridGeometry<T, Dims> level_geom(
-        finest_geom._origin,
+        origin,
         spacing,
         n_interior,
         lvl,
@@ -396,15 +403,6 @@ public:
   const std::string& component_name(int comp) const { return _comp_names[comp]; }
 
   bool is_built() const { return _built; }
-
-  //time for v-cycle and FMC
-  void V(){
-  
-  }
-
-  void full_multigrid_cycle(){
-  
-  }
 
 };
 
