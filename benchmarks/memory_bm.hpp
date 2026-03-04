@@ -1,30 +1,10 @@
 #pragma once
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <vector>
-#include "memory.hpp"
 #include "grid.hpp"
+#include "bm_utils.hpp"  // Timer, do_not_optimise, print_header
 
 namespace bm {
-
-struct Timer {
-  using clock = std::chrono::high_resolution_clock;
-  clock::time_point _start;
-
-  Timer() : _start(clock::now()) {}
-
-  double elapsed_ms() const {
-    auto end = clock::now();
-    return std::chrono::duration<double, std::milli>(end - _start).count();
-  }
-};
-
-// Prevent the compiler from optimising away a value
-template<typename T>
-void do_not_optimise(T const& val) {
-  asm volatile("" : : "r,m"(val) : "memory");
-}
 
 // BM 1: Allocation/deallocation throughput
 // HostAllocator (aligned_alloc) vs new[]/delete[]
@@ -192,10 +172,8 @@ void cellgrid_access(int nx, int ny, int sweeps) {
   }
 }
 
-void run_memory_benchmarks() {
-  std::printf("========================================\n");
-  std::printf("Memory Benchmarks\n");
-  std::printf("========================================\n");
+void run_allocator_microbenchmarks() {
+  print_header("Allocator Micro-Benchmarks");
 
   alloc_throughput(1024, 100000);
   alloc_throughput(1024 * 1024, 1000);

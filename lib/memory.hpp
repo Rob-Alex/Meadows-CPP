@@ -9,6 +9,7 @@
 #include <concepts>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 // Layer 1: Memory Space Tags for each type of memory allocation that is done at compile time 
 
 namespace memory_space {
@@ -93,11 +94,28 @@ struct track_allocations {
     return mtx;
   }
 
+  static std::atomic<size_t>& event_count() {
+    static std::atomic<size_t> c{0};
+    return c;
+  }
+
+  static std::atomic<size_t>& total_bytes_ever() {
+    static std::atomic<size_t> b{0};
+    return b;
+  }
+
+  static void reset_event_counters() {
+    event_count().store(0, std::memory_order_relaxed);
+    total_bytes_ever().store(0, std::memory_order_relaxed);
+  }
+
   template<typename T>
   static void on_allocate(T* ptr, size_t count) {
     if (!ptr) return;
-    std::lock_guard<std::mutex> lock(get_mutex());
-    get_allocations()[ptr] = {count, count * sizeof(T)};
+    { std::lock_guard<std::mutex> lock(get_mutex());
+      get_allocations()[ptr] = {count, count * sizeof(T)}; }
+    event_count().fetch_add(1, std::memory_order_relaxed);
+    total_bytes_ever().fetch_add(count * sizeof(T), std::memory_order_relaxed);
   }
 
   template<typename T>

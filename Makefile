@@ -3,10 +3,15 @@ CXXFLAGS := -std=c++20 -Wall -Wextra -O3
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
-  LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
-  LDFLAGS     := -L$(LLVM_PREFIX)/lib/c++ -Wl,-rpath,$(LLVM_PREFIX)/lib/c++
+  LLVM_PREFIX  := $(shell brew --prefix llvm 2>/dev/null)
+  LDFLAGS      := -L$(LLVM_PREFIX)/lib/c++ -Wl,-rpath,$(LLVM_PREFIX)/lib/c++
+  HDF5_PREFIX  := $(shell brew --prefix hdf5 2>/dev/null)
+  HDF5_CFLAGS  := -I$(HDF5_PREFIX)/include
+  HDF5_LDFLAGS := -L$(HDF5_PREFIX)/lib -lhdf5_cpp -lhdf5
 else
-  LDFLAGS     :=
+  LDFLAGS      :=
+  HDF5_CFLAGS  := $(shell pkg-config --cflags hdf5 2>/dev/null)
+  HDF5_LDFLAGS := $(shell pkg-config --libs hdf5_cpp hdf5 2>/dev/null || echo "-lhdf5_cpp -lhdf5")
 endif
 
 ifdef DEBUG
@@ -15,17 +20,17 @@ endif
 
 # OpenMP (opt-in via OMP=1, e.g. `make all OMP=1`)
 ifdef OMP
-  OMP_LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
-  CXX      := $(OMP_LLVM_PREFIX)/bin/clang++
-  CXXFLAGS += -fopenmp
-  LDFLAGS  += -L$(OMP_LLVM_PREFIX)/lib -lomp
+  ifeq ($(UNAME_S), Darwin)
+    OMP_LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
+    CXX      := $(OMP_LLVM_PREFIX)/bin/clang++
+    CXXFLAGS += -fopenmp
+    LDFLAGS  += -L$(OMP_LLVM_PREFIX)/lib -lomp
+  else
+    CXXFLAGS += -fopenmp
+    LDFLAGS  += -fopenmp
+  endif
 endif
 INCLUDES := -Ilib -Itests -Ibenchmarks
-
-# HDF5 (for exporter, used by main target only)
-HDF5_PREFIX  := $(shell brew --prefix hdf5 2>/dev/null)
-HDF5_CFLAGS  := -I$(HDF5_PREFIX)/include
-HDF5_LDFLAGS := -L$(HDF5_PREFIX)/lib -lhdf5_cpp -lhdf5
 
 SRC_DIR   := src
 BUILD_DIR := build
@@ -73,9 +78,15 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 bench: $(BENCH_TARGET)
-	./$(BENCH_TARGET)
+	./$(BENCH_TARGET) $(SUITE)
 
 bench-build: $(BENCH_TARGET)
+
+# perf-bench: compile with OpenMP and run full suite
+perf-bench: CXXFLAGS += -fopenmp
+perf-bench: LDFLAGS  += -fopenmp
+perf-bench: $(BENCH_TARGET)
+	./$(BENCH_TARGET) all
 
 run: $(TARGET)
 	./$(TARGET)
