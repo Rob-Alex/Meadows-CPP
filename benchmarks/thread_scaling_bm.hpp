@@ -30,10 +30,10 @@ static double median_solve_ms(SolverT& solver, int repeats) {
 }
 
 // -------------------------------------------------------------------------
-// Strong scaling: fixed 2D 512x512 problem
+// Strong scaling: fixed 2D 1024x1024 problem
 // -------------------------------------------------------------------------
 inline void run_strong_scaling() {
-  const int N = 512;
+  const int N = 1024;
   const double h = 1.0 / N;
   const int n_levels = n_levels_for(N);
   const int max_threads = omp_get_max_threads();

@@ -254,7 +254,7 @@ public:
   const GridGeometry<T, Dims>& geometry() const { return _geom; }
 };
 
-// GridHierarchy: top-level owner. 
+// GridHierarchy: this is the new GridCell class which is a top-level owner. 
 // this is the new single component registry so there is one source of 
 // truth. he is the truth and can handle it... 
 // Register-then-build pattern to be able to allocate memory to 
@@ -284,8 +284,7 @@ public:
   GridHierarchy(GridHierarchy&&) noexcept = default;
   GridHierarchy& operator=(GridHierarchy&&) noexcept = default;
 
-  // Registration of components phase before build 
-
+  // Registration of components phase before build so no memory allocs in run
   int register_component(const std::string& name) {
     if (_built) {
       throw std::runtime_error("Cannot register components after build");
@@ -405,8 +404,6 @@ public:
   bool is_built() const { return _built; }
 
 };
-
-
 
 // now this is for the fluxes, which currently are computed each time with
 // no form of persistant storage, however I might change this
