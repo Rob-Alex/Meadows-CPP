@@ -1,4 +1,6 @@
 /*
+  Meadows CPP
+  Robbie Alexander 
   exporter.hpp
   HDF5 + XDMF exporter for VisIt / ParaView visualisation.
 

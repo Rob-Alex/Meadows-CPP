@@ -36,10 +36,7 @@ SRC_DIR   := src
 BUILD_DIR := build
 
 TARGET       := $(BUILD_DIR)/meadows
-TEST_TARGET  := $(BUILD_DIR)/meadows-tests
-BENCH_TARGET := $(BUILD_DIR)/meadows-bench
-
-SUITES := grids allocators fields operators elliptic lookup_tables exporter boundary_conditions
+BENCH_TARGET := $(BUILD_DIR)/benchmark
 
 all: $(TARGET)
 
@@ -61,12 +58,17 @@ $(BUILD_DIR)/main.o: $(SRC_DIR)/main.cpp | $(BUILD_DIR)
 $(TARGET): $(BUILD_DIR)/main.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(HDF5_LDFLAGS) $^ -o $@
 
-# tests (no HDF5 dependency)
-$(TEST_TARGET): $(BUILD_DIR)/tests.o
+# benchmark binary (no HDF5 dependency)
+$(BUILD_DIR)/benchmark_main.o: $(SRC_DIR)/benchmark_main.cpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BENCH_TARGET): $(BUILD_DIR)/benchmark_main.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-$(BENCH_TARGET): $(BUILD_DIR)/benchmarks.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+benchmark: $(BENCH_TARGET)
+	./$(BENCH_TARGET) $(BENCH_MODE)
+
+benchmark-build: $(BENCH_TARGET)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
@@ -77,18 +79,7 @@ $(BUILD_DIR):
 clean:
 	rm -rf $(BUILD_DIR)
 
-bench: $(BENCH_TARGET)
-	./$(BENCH_TARGET) $(SUITE)
-
-bench-build: $(BENCH_TARGET)
-
-# perf-bench: compile with OpenMP and run full suite
-perf-bench: CXXFLAGS += -fopenmp
-perf-bench: LDFLAGS  += -fopenmp
-perf-bench: $(BENCH_TARGET)
-	./$(BENCH_TARGET) all
-
 run: $(TARGET)
 	./$(TARGET)
 
-.PHONY: all test test-build bench bench-build clean run $(addprefix test-,$(SUITES))
+.PHONY: all build clean run benchmark benchmark-build $(addprefix test-,$(SUITES))

@@ -1,7 +1,9 @@
 /* 
+  Meadows CPP
+  Robbie Alexander
+  memory.hpp
   Memory Layer
   Important for managing 
-  Robbie Alexander 
  */ 
 #pragma once
 #include <new>

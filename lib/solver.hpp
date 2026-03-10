@@ -1,6 +1,8 @@
 /*
-  solver.hpp
+  
+  Meadows CPP
   Robbie Alexander
+  solver.hpp
   Geometric multigrid solver for elliptic equations (Poisson / Helmholtz).
   Uses CRTP for the solver base, wires together:
     - RBGS smoother (operators.hpp)

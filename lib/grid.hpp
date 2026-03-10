@@ -1,6 +1,7 @@
 /*
+  Meadows CPP
+  Robbie Alexander
   Grids.hpp
-  Author: Robbie Alexander
   grid file to hold all information about geometry and how
   each component (scalar or vector field) depending on if
   cellCentre data or cell face data.
@@ -75,7 +76,7 @@ struct GridGeometry{
   }
 };
 
-// Box: fundamental data unit. Owns per-component SoA buffers for one rectangular region.
+// Box: fundamental data unit. This owns per-component Structure of Arrays buffers for one rectangular region.
 // If you do some digging youll see this has been refactored from CellGrid
 // this use to hold its own component registry however then we lose 
 // a singular source of truth as each level contains components

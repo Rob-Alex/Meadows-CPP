@@ -1,5 +1,7 @@
 /*
   Meadows-CPP
+  Robbie Alexander 
+  boundary_conditions.hpp
   Boundary Condition classes
 */
 

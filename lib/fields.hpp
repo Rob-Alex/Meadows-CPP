@@ -1,3 +1,9 @@
+/* 
+  Meadows CPP 
+  Robbie Alexander 
+  fields.hpp
+ */
+
 #pragma once
 #include <array>
 #include <cstddef>

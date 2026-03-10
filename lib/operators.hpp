@@ -1,17 +1,24 @@
 /*
-  Operators.hpp
-  Author: Me
-  this contains all the relevant stencil operators, etc
+  Meadows CPP
+  Robbie Alexander
+  operators.hpp
+
+  Stencil operators for the elliptic solver.
+  Hot-path operators (RBGS, residual) use raw pointer arithmetic
+  in the inner loop for maximum throughput:
+    - No per-cell index array copies
+    - No per-cell stride computation
+    - Precomputed reciprocal for division -> multiplication
+    - Inner dimension contiguous for SIMD auto-vectorisation
 */
 #pragma once
 #include "grid.hpp"
 #include "parallel_loop.hpp"
 #include <cmath>
+#include <cstddef>
 
 // InteriorLoop: compile-time nested loop over all Dims dimensions.
-// Same recursive template pattern as TransverseLoop (used by BCs)
-// but iterates every dimension — no skip.
-// D walks from 0 to Dims. Base case at D == Dims calls the lambda.
+// Used by non-hot-path code (zero_field, BC fill, etc.)
 
 template<int Dims, int D>
 struct InteriorLoop {
@@ -34,9 +41,7 @@ struct InteriorLoop<Dims, Dims> {
   }
 };
 
-// StandardFlux: default flux policy for the Laplacian.
-// Accumulates the standard 2nd-order central difference contribution
-// for one dimension into the running Laplacian value.
+// StandardFlux: flux policy for the Laplacian (kept for non-hot-path use).
 
 struct StandardFlux {
   template<typename T, int Dims, typename IdxArray>
@@ -49,8 +54,8 @@ struct StandardFlux {
   }
 };
 
-// Laplacian: applies L(phi) = sum_d d^2(phi)/dx_d^2 over all interior cells.
-// FluxPolicy controls per-face contribution (StandardFlux now, EBFlux later).
+// laplacian: L(phi) over all interior cells.
+// Not on the critical path — uses the lambda-based parallel loop.
 
 template<typename FluxPolicy, typename T, int Dims, typename Alloc = HostAllocator<T, default_tracking<T>>>
 struct laplacian {
@@ -88,8 +93,13 @@ struct l2_norm {
   }
 };
 
-// residual: computes res = rhs - L(phi), returns L2 norm of res.
-// Fused into a single pass — avoids a separate Lphi buffer.
+// ============================================================================
+// residual: res = rhs - L(phi), returns L2 norm.
+// ============================================================================
+// Raw pointer inner loop: the innermost dimension runs contiguously
+// with direct pointer offsets. No index arrays, no stride loops.
+// The FluxPolicy parameter is retained for API compatibility;
+// the implementation uses the standard 2nd-order central difference.
 
 template<typename FluxPolicy, typename T, int Dims, typename Alloc = HostAllocator<T, default_tracking<T>>>
 struct residual {
@@ -98,31 +108,106 @@ struct residual {
                    FieldAccessor<T, Dims>& res,
                    const GridGeometry<T, Dims>& geom) {
 
+    const auto& ni = geom._n_interior;
+
     std::array<T, Dims> inv_dx2;
+    T diag = T{0};
     for (int d = 0; d < Dims; ++d) {
       inv_dx2[d] = T{1} / (geom._spacing[d] * geom._spacing[d]);
+      diag += T{-2} * inv_dx2[d];
     }
 
-    T sum = parallel_reduce_interior<T, Dims>(geom, T{0},
-      [&](const std::array<int, Dims>& cell) -> T {
-        T lap = T{0};
-        for (int d = 0; d < Dims; ++d) {
-          FluxPolicy::accumulate(phi, cell, d, inv_dx2[d], lap);
-        }
-        res[cell] = rhs[cell] - lap;
-        return res[cell] * res[cell];
-      });
+    // Raw data pointers (pre-offset to interior start by accessor)
+    T* phi_ptr = phi._data;
+    T* rhs_ptr = rhs._data;
+    T* res_ptr = res._data;
 
-    return std::sqrt(sum / static_cast<T>(geom.total_interior_cells()));
+    // Signed strides for safe negative indexing into ghost cells
+    std::array<ptrdiff_t, Dims> s;
+    for (int d = 0; d < Dims; ++d) {
+      s[d] = static_cast<ptrdiff_t>(phi._strides[d]);
+    }
+
+    int outer_total = 1;
+    for (int d = 0; d < Dims - 1; ++d) {
+      outer_total *= ni[d];
+    }
+    const int ni_inner = ni[Dims - 1];
+
+    T total_sum = T{0};
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) reduction(+:total_sum) if(outer_total >= OMP_MIN_OUTER)
+#endif
+    for (int outer = 0; outer < outer_total; ++outer) {
+      // Unflatten outer -> base offset (amortised once per row)
+      int rem = outer;
+      ptrdiff_t base = 0;
+      for (int d = Dims - 2; d >= 0; --d) {
+        int idx = rem % ni[d];
+        rem /= ni[d];
+        base += idx * s[d];
+      }
+
+      T row_sum = T{0};
+      for (int j = 0; j < ni_inner; ++j) {
+        ptrdiff_t c = base + j;
+
+        // Stencil: L(phi) at cell c
+        T center = phi_ptr[c];
+        T lap = (phi_ptr[c + 1] + phi_ptr[c - 1]) * inv_dx2[Dims - 1];
+        for (int d = 0; d < Dims - 1; ++d) {
+          lap += (phi_ptr[c + s[d]] + phi_ptr[c - s[d]]) * inv_dx2[d];
+        }
+        lap += diag * center;  // diagonal: -2 * sum(inv_dx2) * phi[c]
+
+        // Wait: the full Laplacian already includes the -2*center term
+        // per dimension inside each (phi+ + phi- - 2*phi) * inv_dx2.
+        // By separating: neighbor_sum * inv_dx2 + diag * center.
+        // diag = sum(-2 * inv_dx2[d]) so: lap = neighbor_weighted_sum + diag*center. Correct.
+
+        T r = rhs_ptr[c] - lap;
+        res_ptr[c] = r;
+        row_sum += r * r;
+      }
+      total_sum += row_sum;
+    }
+
+    return std::sqrt(total_sum / static_cast<T>(geom.total_interior_cells()));
   }
 };
 
-// SmootherBase: CRTP base for smoothers.
-// Derived must implement:
-//   smooth_impl(phi, rhs, geom, n_sweeps, fill_bc_fn)
-// fill_bc_fn is a callable: void(FieldAccessor<T, Dims>&)
-// so the smoother can fill BCs between colour sweeps without
-// coupling to BCRegistry.
+// gradient: E = -nabla(phi) at cell centres.
+// Not on the critical path — uses the lambda-based parallel loop.
+
+template<typename T, int Dims, typename Alloc = HostAllocator<T, default_tracking<T>>>
+struct gradient {
+  static void compute(FieldAccessor<T, Dims>& phi,
+                      std::array<FieldAccessor<T, Dims>, Dims>& E,
+                      FieldAccessor<T, Dims>& E_mag,
+                      const GridGeometry<T, Dims>& geom) {
+
+    std::array<T, Dims> inv_2dx;
+    for (int d = 0; d < Dims; ++d) {
+      inv_2dx[d] = T{1} / (T{2} * geom._spacing[d]);
+    }
+
+    parallel_for_interior<T, Dims>(geom,
+      [&](const std::array<int, Dims>& cell) {
+        T mag_sq = T{0};
+        for (int d = 0; d < Dims; ++d) {
+          auto idx_p = cell;  idx_p[d] += 1;
+          auto idx_m = cell;  idx_m[d] -= 1;
+          T Ed = -(phi[idx_p] - phi[idx_m]) * inv_2dx[d];
+          E[d][cell] = Ed;
+          mag_sq += Ed * Ed;
+        }
+        E_mag[cell] = std::sqrt(mag_sq);
+      });
+  }
+};
+
+// SmootherBase: CRTP base.
 
 template<class Derived, typename T, int Dims>
 struct SmootherBase {
@@ -137,24 +222,17 @@ struct SmootherBase {
   }
 };
 
-// RBGS: Red-Black Gauss-Seidel smoother for the Laplacian.
+// ============================================================================
+// RBGS: Red-Black Gauss-Seidel with raw pointer inner loop.
+// ============================================================================
+// The inner loop uses direct pointer arithmetic with signed strides:
+//   phi_ptr[c ± 1]      — inner dimension neighbours (contiguous)
+//   phi_ptr[c ± s[d]]   — outer dimension neighbours
+//   inv_diag             — precomputed reciprocal (multiply, not divide)
 //
-// Cell colouring: (i + j + ...) % 2
-//   red = 0, black = 1
-//
-// Each sweep:
-//   1. Update all red cells   (neighbours are all black → no conflicts)
-//   2. Fill BCs               (ghost values may have changed)
-//   3. Update all black cells (neighbours are all red → no conflicts)
-//
-// Update formula (derived from solving L(phi)=rhs locally for phi[cell]):
-//   off_diagonal = sum_d (phi[i+1,d] + phi[i-1,d]) * inv_dx2[d]
-//   diagonal     = sum_d (-2 * inv_dx2[d])
-//   phi[cell]    = (rhs[cell] - off_diagonal) / diagonal
-//
-// In-place — no scratch buffer. Each colour's neighbours are the
-// other colour, so reads are always from the "old" values.
-// GPU: each colour sweep is embarrassingly parallel → parallel_for.
+// The parallel loop is inlined: OpenMP on the outer row loop, serial
+// on the inner column loop. This gives one fork/join per colour pass
+// and the inner loop is fully vectorisable.
 
 template<typename T, int Dims>
 struct RBGS : SmootherBase<RBGS<T, Dims>, T, Dims> {
@@ -166,32 +244,68 @@ struct RBGS : SmootherBase<RBGS<T, Dims>, T, Dims> {
                    int n_sweeps,
                    FillBCFn&& fill_bc_fn) {
 
-    // precompute 1/dx^2 per dimension and the diagonal coefficient
+    const auto& ni = geom._n_interior;
+
+    // Precompute coefficients
     std::array<T, Dims> inv_dx2;
     T diag = T{0};
     for (int d = 0; d < Dims; ++d) {
       inv_dx2[d] = T{1} / (geom._spacing[d] * geom._spacing[d]);
       diag += T{-2} * inv_dx2[d];
     }
+    T inv_diag = T{1} / diag;  // multiply is ~20x faster than divide
+
+    // Raw data pointers
+    T* phi_ptr = phi._data;
+    const T* rhs_ptr = rhs._data;
+
+    // Signed strides for safe negative indexing into ghost cells
+    std::array<ptrdiff_t, Dims> s;
+    for (int d = 0; d < Dims; ++d) {
+      s[d] = static_cast<ptrdiff_t>(phi._strides[d]);
+    }
+
+    // Outer loop size (all dimensions except innermost)
+    int outer_total = 1;
+    for (int d = 0; d < Dims - 1; ++d) {
+      outer_total *= ni[d];
+    }
+    const int ni_inner = ni[Dims - 1];
 
     for (int sweep = 0; sweep < n_sweeps; ++sweep) {
-      // two passes per sweep: colour 0 (red) then colour 1 (black)
       for (int colour = 0; colour < 2; ++colour) {
-        parallel_for_interior_colour<T, Dims>(geom, colour,
-          [&](const std::array<int, Dims>& cell) {
-            // accumulate off-diagonal: sum of neighbour contributions
-            T off_diag = T{0};
-            for (int d = 0; d < Dims; ++d) {
-              auto idx_p = cell;  idx_p[d] += 1;
-              auto idx_m = cell;  idx_m[d] -= 1;
-              off_diag += (phi[idx_p] + phi[idx_m]) * inv_dx2[d];
+
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static) if(outer_total >= OMP_MIN_OUTER)
+#endif
+        for (int outer = 0; outer < outer_total; ++outer) {
+          // Unflatten outer indices and compute row base offset
+          int rem = outer;
+          int outer_sum = 0;
+          ptrdiff_t base = 0;
+          for (int d = Dims - 2; d >= 0; --d) {
+            int idx = rem % ni[d];
+            rem /= ni[d];
+            outer_sum += idx;
+            base += idx * s[d];
+          }
+
+          int j_start = colour ^ (outer_sum & 1);
+
+          // Tight inner loop: raw pointer arithmetic, no index arrays
+          for (int j = j_start; j < ni_inner; j += 2) {
+            ptrdiff_t c = base + j;
+
+            // Off-diagonal: weighted sum of all neighbours
+            T off_diag = (phi_ptr[c + 1] + phi_ptr[c - 1]) * inv_dx2[Dims - 1];
+            for (int d = 0; d < Dims - 1; ++d) {
+              off_diag += (phi_ptr[c + s[d]] + phi_ptr[c - s[d]]) * inv_dx2[d];
             }
 
-            phi[cell] = (rhs[cell] - off_diag) / diag;
-          });
+            phi_ptr[c] = (rhs_ptr[c] - off_diag) * inv_diag;
+          }
+        }
 
-        // fill BCs after each colour pass so the next colour
-        // sees correct ghost values
         fill_bc_fn(phi);
       }
     }

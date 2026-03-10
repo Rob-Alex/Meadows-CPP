@@ -3,3 +3,5 @@
 -Wextra
 -Ilib
 -Itests
+-Ibenchmarks
+-I/opt/homebrew/opt/hdf5/include
